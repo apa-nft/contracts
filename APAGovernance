@@ -1,0 +1,122 @@
+// SPDX-License-Identifier: GPL-3.0
+
+pragma solidity >=0.7.0 <0.9.0;
+
+
+interface ERC721 {
+    function balanceOf(address _owner) external view returns (uint256);
+
+}
+
+contract AnimalGovernance {
+
+    struct Proposal {
+        uint id;
+        string name;
+        string description;
+        Option[] options;
+        uint end;
+        bool perAPA; //set to true for 1 vote per APA held or 'false' for 1 vote per holder address.
+    }
+
+    struct Option {
+        uint id;
+        string name;
+        uint numVotes;
+    }
+
+   
+    
+    address public  manager;
+    //minimum number of APAs that must be held to create proposal
+    uint public proposerApas; 
+    uint public nextPropId;
+    Proposal[] public proposals;
+    mapping(address => mapping(uint => bool)) public votes;
+    address private apaToken = 0x880fe52c6bc4ffffb92d6c03858c97807a900691;
+
+
+    constructor() {
+        manager = msg.sender;
+        nextPropId = 0;
+    }
+
+    modifier onlyManager() {
+        require(msg.sender == manager, 'only manager can execute this function');
+        _;
+    } 
+
+    modifier verifyNumApas(uint threshold) {
+        // Check if sender has minimum number of APAs
+        require(balanceOf(apaToken) >= threshold, 'Need more APAs');
+        _;
+    }
+    //function to set number of APAs needed to be able to create proposal
+    function setProposerApas(uint minApas) public onlyManager() {
+        proposerApas = minApas;
+    }
+
+    function balanceOf(address _apaToken) 
+        internal
+        view 
+        returns (uint){
+        return ERC721(_apaToken).balanceOf(msg.sender);
+    }
+
+    //_perAPA set to TRUE for 1 vote per APA owned, or set to FALSE for 1 vote per holder address
+    function createProposal( 
+        string memory _name, 
+        string  memory _descr, 
+        string[] memory _options, 
+        uint duration,
+        bool _perAPA
+        ) public verifyNumApas(proposerApas) {
+           proposals[nextPropId].id = nextPropId;
+           proposals[nextPropId].name = _name;
+           proposals[nextPropId].description = _descr;
+           proposals[nextPropId].end = block.timestamp + duration; 
+           proposals[nextPropId].perAPA = _perAPA;
+           for(uint i=0; i < _options.length; i++) {
+                proposals[nextPropId].options.push(Option(i, _options[i], 0 ));
+           }
+           nextPropId++;
+
+    }
+
+    function vote(uint proposalId, uint optionId) external {
+        uint voterBalance = balanceOf(apaToken);
+        require(voterBalance > 0, "Need at least one APA to cast a vote");
+        require(votes[msg.sender][proposalId] != true, "Voter has already voted");  // Maker sure voter has not yet voted
+        require(block.timestamp < proposals[proposalId].end, "Proposal has Expired");
+
+        //1 vote per APA 
+        if(proposals[proposalId].perAPA){
+            proposals[proposalId].options[optionId].numVotes += voterBalance;
+        }
+
+        //1 vote per address
+        if(!proposals[proposalId].perAPA){
+            proposals[proposalId].options[optionId].numVotes += 1;
+        }
+        //mark voter as voted
+        votes[msg.sender][proposalId] = true;
+    }
+
+    function getResults(uint proposalId)
+        view
+        external
+        returns(Option[] memory) {
+            //make sure proposal has ended
+            require(block.timestamp > proposals[proposalId].end, "Proposal has not yet ended");
+            return proposals[proposalId].options;
+        }
+
+        function getCurrentVotes(uint proposalId, uint )
+        view
+        external
+        returns(uint) {
+             return proposals[proposalId].options;
+        }
+    
+
+}
