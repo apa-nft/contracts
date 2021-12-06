@@ -1,0 +1,3 @@
+[submodule "auction-contract"]
+	path = auction-contract
+	url = https://github.com/apa-nft/auction-contract
