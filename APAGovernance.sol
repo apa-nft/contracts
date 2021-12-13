@@ -16,7 +16,6 @@ interface IERC721Enumerable {
 
 contract APAGovernance {
     IERC721Enumerable  apaContract;
-    Market apaMkt;
 
     enum BallotType {perAPA, perAddress}
     enum Status { Accepted, Rejected, Active }
@@ -48,7 +47,6 @@ contract APAGovernance {
     constructor() {
         manager = msg.sender;
         apaContract = IERC721Enumerable(apaToken);
-        apaMkt = Market(apaMarket);
         proposerApas = 30;
     }
 
