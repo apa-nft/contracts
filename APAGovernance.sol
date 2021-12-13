@@ -103,10 +103,10 @@ contract APAGovernance {
         require(!voters[proposalId][msg.sender], "Voter has already voted");  // Maker sure voter has not yet voted
         require(block.timestamp < proposals[proposalId].end, "Proposal has Expired");
         uint currentAPA;
-        uint8 ineligibleCount=0;
+        uint ineligibleCount=0;
  
         //get user Apas map from wallet
-       for(uint16 i=0; i < voterBalance; i++){
+       for(uint i=0; i < voterBalance; i++){
             currentAPA = apaContract.tokenOfOwnerByIndex(msg.sender, i);
             //check if APA has already voted and add to UserAPAs if eligible
            
