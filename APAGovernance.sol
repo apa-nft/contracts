@@ -5,7 +5,7 @@ pragma solidity >=0.7.0 <0.9.0;
 import "./Market.sol";
 
 
-contract APAGovernor {
+contract APAGovernance {
     IERC721Enumerable immutable apaContract;
     Market immutable apaMkt;
 
