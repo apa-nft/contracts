@@ -2,20 +2,12 @@
 
 pragma solidity >=0.7.0 <0.9.0;
 
+import "./Market.sol";
 
 
-interface IERC721Enumerable {
-    //Returns the total amount of tokens stored by the contract.
-    function totalSupply() external view returns (uint256);
-
-    function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256 tokenId);
-
-    function balanceOf(address _owner) external view returns (uint256);
-}
-
-
-contract APAGovernance {
-    IERC721Enumerable  apaContract;
+contract APAGovernor {
+    IERC721Enumerable immutable apaContract;
+    Market immutable apaMkt;
 
     enum BallotType {perAPA, perAddress}
     enum Status { Accepted, Rejected, Active }
@@ -33,21 +25,20 @@ contract APAGovernance {
         Status status;
     }
  
-    address public  manager;
-    uint public votingPeriod;
+    address public manager;
     uint public proposerApas; 
-    uint private nextPropId;
+    uint public nextPropId;
     Proposal[] public proposals;
     mapping(uint => mapping(address => bool)) public voters;
     mapping(uint => mapping(uint => bool)) public votedAPAs;
-    address private apaToken = 0x9E491465BbD22B62D7d27E0Ff35d4e263228ba5C;
-    address private apaMarket = 0x451650527d1a58875E71cf18F429E46838387Dc1;
-
+    address public apaToken = 0x9E491465BbD22B62D7d27E0Ff35d4e263228ba5C;
+    address public apaMarket = 0xc7BE0807843396c22f5B3D550872D0Cb9f113165;
 
     constructor() {
         manager = msg.sender;
         apaContract = IERC721Enumerable(apaToken);
-        proposerApas = 30;
+        apaMkt = Market(apaMarket);
+        proposerApas =30;
     }
 
     modifier onlyManager() {
@@ -55,22 +46,15 @@ contract APAGovernance {
         _;
     } 
 
-    modifier verifyNumApas(uint minAPAs) {
+    modifier verifyNumApas() {
         // Check if sender has minimum number of APAs
-        require(balanceOf(msg.sender) >= minAPAs, 'Need more APAs');
+        require(apaContract.balanceOf(msg.sender) >= proposerApas, 'Need more APAs');
         _;
     }
-    //function to set number of APAs needed to be able to create proposal
-    function setProposerApas(uint minApas) public onlyManager() {
-        require (minApas >0, "set minimum to at least one APA ");
-        proposerApas = minApas;
-    }
 
-    function balanceOf(address owner) 
-        public
-        view 
-        returns (uint){
-        return apaContract.balanceOf(owner);
+    function setProposerApas(uint minApas) public onlyManager() {
+        require (minApas != 0, "set minimum to at least one APA ");
+        proposerApas = minApas;
     }
 
     function createProposal(
@@ -78,7 +62,7 @@ contract APAGovernance {
         string memory _desc,
         uint duration, //in days
         BallotType _ballotType //0=perAPA 1=perAddress
-        ) external verifyNumApas(proposerApas)  {
+        ) external verifyNumApas()  {
             proposals.push( Proposal({
                 id: nextPropId,
                 author: msg.sender,
@@ -89,50 +73,82 @@ contract APAGovernance {
                 votesNo: 0,
                 ballotType: _ballotType,
                 status: Status.Active
-            })
+                })
             );
             nextPropId+=1;
 
     }
 
     function vote(uint proposalId , Votes _vote) external {
-        uint voterBalance = balanceOf(msg.sender);
-        require(voterBalance > 0, "Need at least one APA to cast a vote");
-        require(!voters[proposalId][msg.sender], "Voter has already voted");  // Maker sure voter has not yet voted
-        require(block.timestamp < proposals[proposalId].end, "Proposal has Expired");
+        uint voterBalance = apaContract.balanceOf(msg.sender);
+        require(voterBalance != 0, "Need at least one APA to cast a vote");
+        require(block.timestamp <= proposals[proposalId].end, "Proposal has Expired");
+        require(proposals[proposalId].status == Status.Active, "Proposal does not exist");
+
         uint currentAPA;
         uint ineligibleCount=0;
- 
-        //get user Apas map from wallet
-       for(uint i=0; i < voterBalance; i++){
-            currentAPA = apaContract.tokenOfOwnerByIndex(msg.sender, i);
-            //check if APA has already voted and add to UserAPAs if eligible
-           
-            if(votedAPAs[proposalId][currentAPA] != true){
-                //add APAs to proposal array
-                if(proposals[proposalId].ballotType == BallotType.perAPA){
+        uint userActListings=0;
+
+        Market.Listing[] memory activeListings;
+        uint totalListings =apaMkt.totalActiveListings();
+        activeListings =apaMkt.getActiveListings(0,totalListings);
+
+        uint iterations;
+        if (voterBalance >= totalListings){
+            iterations = voterBalance;
+        }
+        else iterations = totalListings;
+
+        //get user Apas from wallet
+        for(uint i=0; i <= iterations-1; i++){
+
+            if(i <= voterBalance - 1){
+                //get current APA
+                currentAPA = apaContract.tokenOfOwnerByIndex(msg.sender, i);
+                //check if APA has already voted
+                if(!votedAPAs[proposalId][currentAPA]){
+                    //count APA as voted
                     votedAPAs[proposalId][currentAPA] = true;
+                    //check Ballot Type
+                    if(proposals[proposalId].ballotType == BallotType.perAddress){
+                        require(!voters[proposalId][msg.sender], "Voter has already voted");
+                        break;//break if one vote per address, 
+                    }
                 }
-                if(proposals[proposalId].ballotType == BallotType.perAddress){
-                    votedAPAs[proposalId][currentAPA] = true;//prevent using same APA more than once
-                    break;//break if one vote per address, 
-                }
-                
+                else ineligibleCount+=1;
             }
-            else{
-                ineligibleCount+=1;
+        
+            //get user Apas from Market (will be skipped if no market apas)
+            if(i <= totalListings - 1){
+
+                if (activeListings[i].owner == msg.sender){
+                    currentAPA = activeListings[i].tokenId;
+                    //check if APA has already voted
+                    if(!votedAPAs[proposalId][currentAPA]){
+                        //count APA as voted
+                        votedAPAs[proposalId][currentAPA] = true;
+                        userActListings++;
+                        //check Ballot Type
+                        if(proposals[proposalId].ballotType == BallotType.perAddress){
+                            require(!voters[proposalId][msg.sender], "Voter has already voted");
+                            break;//break if one vote per address, 
+                        }
+                    }              
+                }
             }
         }
-        
-        uint eligibleVotes = voterBalance - ineligibleCount;
+        int eligibleVotes = int(voterBalance) + int(userActListings) - int(ineligibleCount);
+
       
         //1 vote per APA 
        if(proposals[proposalId].ballotType == BallotType.perAPA){
+            require(eligibleVotes >= 1, "All APA's have voted");
+
             if (_vote == Votes.Yes){
-                proposals[proposalId].votesYes += eligibleVotes;
+                proposals[proposalId].votesYes += uint(eligibleVotes);
             }
             else {
-                proposals[proposalId].votesNo += eligibleVotes;
+                proposals[proposalId].votesNo += uint(eligibleVotes);
             }
             
         }
@@ -145,15 +161,16 @@ contract APAGovernance {
             if (_vote == Votes.No){
                 proposals[proposalId].votesNo += 1;
             }
+            //mark voter as voted
+            voters[proposalId][msg.sender] = true;
         }
-        //mark voter as voted
-        voters[proposalId][msg.sender] = true; 
+         
     }
-    
+  
     function certifyResults(uint proposalId) external onlyManager() returns(Status) {
             //make sure proposal has ended
-            require(block.timestamp > proposals[proposalId].end, "Proposal has not yet ended");
-            if(proposals[proposalId].votesYes - proposals[proposalId].votesNo > 0) {
+            require(block.timestamp >= proposals[proposalId].end, "Proposal has not yet ended");
+            if(proposals[proposalId].votesYes - proposals[proposalId].votesNo >= 1) {
                 proposals[proposalId].status = Status.Accepted;
             }
             else proposals[proposalId].status = Status.Rejected;
@@ -163,7 +180,4 @@ contract APAGovernance {
     function getProposals() view external returns(Proposal[] memory){
         return proposals;
     }
-
-    
-
 }
