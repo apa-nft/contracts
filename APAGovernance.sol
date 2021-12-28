@@ -49,8 +49,16 @@ contract APAGovernance {
     } 
 
     modifier verifyNumApas() {
-        // Check if sender has minimum number of APAs
-        require(apaContract.balanceOf(msg.sender) >= proposerApas, 'Need more APAs');
+        bool isLegendary;
+        uint numAPAs = apaContract.balanceOf(msg.sender);
+        for(uint i=9980; i <= 9999; i++){
+            //get current APA
+            if(apaContract.ownerOf(i) == msg.sender){
+                isLegendary = true;
+                break;
+            } 
+        }
+        require((numAPAs >= proposerApas || isLegendary), 'Need more APAs');
         _;
     }
 
