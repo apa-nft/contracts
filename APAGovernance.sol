@@ -29,6 +29,7 @@ contract APAGovernance {
     uint public proposerApas; 
     uint public nextPropId;
     Proposal[] public proposals;
+    mapping(uint => mapping(address => bool)) public certifiers;
     mapping(uint => mapping(address => bool)) public voters;
     mapping(uint => mapping(uint => bool)) public votedAPAs;
     address public apaToken = 0x9E491465BbD22B62D7d27E0Ff35d4e263228ba5C;
@@ -36,6 +37,7 @@ contract APAGovernance {
 
     constructor() {
         manager = msg.sender;
+        certifiers[msg.sender] = true;
         apaContract = IERC721Enumerable(apaToken);
         apaMkt = Market(apaMarket);
         proposerApas =30;
@@ -177,7 +179,24 @@ contract APAGovernance {
         return proposals[proposalId].status;
     }
 
-    function getProposals() view external returns(Proposal[] memory){
+    function getProposals() external view returns(Proposal[] memory){
         return proposals;
+    }
+
+    function addCertifier(address newCertifier) public onlyManager(){
+        certifiers[newCertifier] = true;
+    }
+
+    function removeCertifier(address newCertifier) external onlyManager(){
+        certifiers[newCertifier] = false;
+    }
+
+    function checkIfCertifier(address possCertifier) external view returns(bool){
+        if (certifiers[possCertifier] == true) return true;
+        else return false;
+    }
+
+    function setManager(address newManager) external onlyManager(){
+        manager = newManager;
     }
 }
