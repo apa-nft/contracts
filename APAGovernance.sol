@@ -10,37 +10,43 @@ contract APAGovernance {
     Market immutable apaMkt;
 
     enum BallotType {perAPA, perAddress}
-    enum Status { Accepted, Rejected, Active }
-    enum Votes { Yes, No }
-
+    enum Status { Active, Certified, FailedQuorum}
+    
     struct Proposal {
         uint id;
         address author;
         string name;
         string description;
+        Option[] options;
         uint end;
-        uint votesYes;
-        uint votesNo;
         BallotType ballotType;  // 0 = perAPA   1= perAddress
         Status status;
+    }
+
+    struct Option {
+        uint id;
+        string name;
+        uint numVotes;
     }
  
     address public manager;
     uint public proposerApas; 
+    uint public quorum;
     uint public nextPropId;
-    Proposal[] public proposals;
-    mapping(uint => mapping(address => bool)) public certifiers;
+    //Proposal[] public proposals;
+    mapping(uint => Proposal) public proposals;
+    mapping(address => bool) public certifiers;
     mapping(uint => mapping(address => bool)) public voters;
     mapping(uint => mapping(uint => bool)) public votedAPAs;
     address public apaToken = 0x9E491465BbD22B62D7d27E0Ff35d4e263228ba5C;
-    address public apaMarket = 0xc7BE0807843396c22f5B3D550872D0Cb9f113165;
+    address public apaMarket = 0xc7BE0807843396c22f5B3D550872D0Cb9f113165;//new testnet market address
 
     constructor() {
         manager = msg.sender;
-        certifiers[msg.sender] = true;
         apaContract = IERC721Enumerable(apaToken);
         apaMkt = Market(apaMarket);
         proposerApas =30;
+        quorum = 200;
     }
 
     modifier onlyManager() {
@@ -52,7 +58,6 @@ contract APAGovernance {
         bool isLegendary;
         uint numAPAs = apaContract.balanceOf(msg.sender);
         for(uint i=9980; i <= 9999; i++){
-            //get current APA
             if(apaContract.ownerOf(i) == msg.sender){
                 isLegendary = true;
                 break;
@@ -70,37 +75,35 @@ contract APAGovernance {
     function createProposal(
         string memory _name, 
         string memory _desc,
+        string[] memory _optionNames,
         uint duration, //in days
         BallotType _ballotType //0=perAPA 1=perAddress
         ) external verifyNumApas()  {
-            proposals.push( Proposal({
-                id: nextPropId,
-                author: msg.sender,
-                name: _name,
-                description: _desc,
-                end: block.timestamp + duration * 1 days,
-                votesYes: 0,
-                votesNo: 0,
-                ballotType: _ballotType,
-                status: Status.Active
-                })
-            );
+            proposals[nextPropId].id = nextPropId;
+            proposals[nextPropId].author = msg.sender;
+            proposals[nextPropId].name = _name;
+            proposals[nextPropId].description = _desc;
+            proposals[nextPropId].end = block.timestamp + duration * 1 days;
+            proposals[nextPropId].ballotType = _ballotType;
+            proposals[nextPropId].status = Status.Active;   
+            for(uint i = 0; i <= _optionNames.length - 1; i++){
+                proposals[nextPropId].options.push(Option(i, _optionNames[i], 0));
+            }
             nextPropId+=1;
+        }
 
-    }
-
-    function vote(uint proposalId , Votes _vote) external {
+    function vote(uint proposalId, uint optionId) external {
         uint voterBalance = apaContract.balanceOf(msg.sender);
         require(voterBalance != 0, "Need at least one APA to cast a vote");
         require(block.timestamp <= proposals[proposalId].end, "Proposal has Expired");
-        require(proposals[proposalId].status == Status.Active, "Proposal does not exist");
+        require(proposals[proposalId].status == Status.Active, "Not an Active Proposal");
 
         uint currentAPA;
         uint ineligibleCount=0;
         uint userActListings=0;
-
-        Market.Listing[] memory activeListings;
         uint totalListings =apaMkt.totalActiveListings();
+        
+        Market.Listing[] memory activeListings;
         activeListings =apaMkt.getActiveListings(0,totalListings);
 
         uint iterations;
@@ -124,8 +127,7 @@ contract APAGovernance {
                         require(!voters[proposalId][msg.sender], "Voter has already voted");
                         break;//break if one vote per address, 
                     }
-                }
-                else ineligibleCount+=1;
+                } else ineligibleCount+=1;
             }
         
             //get user Apas from Market (will be skipped if no market apas)
@@ -153,45 +155,42 @@ contract APAGovernance {
         //1 vote per APA 
        if(proposals[proposalId].ballotType == BallotType.perAPA){
             require(eligibleVotes >= 1, "All APA's have voted");
-
-            if (_vote == Votes.Yes){
-                proposals[proposalId].votesYes += uint(eligibleVotes);
-            }
-            else {
-                proposals[proposalId].votesNo += uint(eligibleVotes);
-            }
-            
+            //count votes
+            proposals[proposalId].options[optionId].numVotes += uint(eligibleVotes);
         }
 
         //1 vote per address
         if(proposals[proposalId].ballotType == BallotType.perAddress){
-            if (_vote == Votes.Yes){
-                proposals[proposalId].votesYes += 1;
-            }
-            if (_vote == Votes.No){
-                proposals[proposalId].votesNo += 1;
-            }
+            //count vote
+            proposals[proposalId].options[optionId].numVotes += 1;
             //mark voter as voted
             voters[proposalId][msg.sender] = true;
         }
          
     }
   
-    function certifyResults(uint proposalId) external onlyManager() returns(Status) {
-            //make sure proposal has ended
-            require(block.timestamp >= proposals[proposalId].end, "Proposal has not yet ended");
-            if(proposals[proposalId].votesYes - proposals[proposalId].votesNo >= 1) {
-                proposals[proposalId].status = Status.Accepted;
-            }
-            else proposals[proposalId].status = Status.Rejected;
+    function certifyResults(uint proposalId) external returns(Status) {
+        require(certifiers[msg.sender], "must be certifier to certify results");
+        require(block.timestamp >= proposals[proposalId].end, "Proposal has not yet ended");
+        require(proposals[proposalId].status == Status.Active, "Not an Active Proposal");
+        bool quorumMet;
+
+        for(uint i=0; i <= proposals[proposalId].options.length; i++)
+            if(proposals[proposalId].options[i].numVotes >= quorum) quorumMet = true;
+
+        if(!quorumMet) {
+            proposals[proposalId].status = Status.FailedQuorum;
+        } else 
+            proposals[proposalId].status = Status.Certified;
+
         return proposals[proposalId].status;
     }
 
-    function getProposals() external view returns(Proposal[] memory){
-        return proposals;
+    function getVoteCount(uint proposalId) external view returns(Option[] memory){
+        return proposals[proposalId].options;
     }
 
-    function addCertifier(address newCertifier) public onlyManager(){
+    function addCertifier(address newCertifier) external onlyManager(){
         certifiers[newCertifier] = true;
     }
 
@@ -199,12 +198,12 @@ contract APAGovernance {
         certifiers[newCertifier] = false;
     }
 
-    function checkIfCertifier(address possCertifier) external view returns(bool){
-        if (certifiers[possCertifier] == true) return true;
-        else return false;
-    }
-
     function setManager(address newManager) external onlyManager(){
         manager = newManager;
+    }
+
+    function setQuorum(uint newQuorum) external onlyManager(){
+        require(quorum >= 1, "must have at least one winning vote");
+        quorum = newQuorum;
     }
 }
