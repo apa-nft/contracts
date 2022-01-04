@@ -21,6 +21,7 @@ contract APAGovernance {
         uint end;
         BallotType ballotType;  // 0 = perAPA   1= perAddress
         Status status;
+        uint quorum;
     }
 
     struct Option {
@@ -31,7 +32,8 @@ contract APAGovernance {
  
     address public manager;
     uint public proposerApas; 
-    uint public quorum;
+    uint public quorumPerAPA;
+    uint public quorumPerAddress;
     uint public nextPropId;
     //Proposal[] public proposals;
     mapping(uint => Proposal) public proposals;
@@ -46,7 +48,8 @@ contract APAGovernance {
         apaContract = IERC721Enumerable(apaToken);
         apaMkt = Market(apaMarket);
         proposerApas =30;
-        quorum = 200;
+        quorumPerAPA = 200;
+        quorumPerAddress = 40;
     }
 
     modifier onlyManager() {
@@ -89,6 +92,13 @@ contract APAGovernance {
             for(uint i = 0; i <= _optionNames.length - 1; i++){
                 proposals[nextPropId].options.push(Option(i, _optionNames[i], 0));
             }
+
+            if(_ballotType == BallotType.perAPA){
+                proposals[nextPropId].quorum = quorumPerAPA;
+            } else {
+                proposals[nextPropId].quorum = quorumPerAddress;
+            }
+
             nextPropId+=1;
         }
 
@@ -175,12 +185,14 @@ contract APAGovernance {
         require(proposals[proposalId].status == Status.Active, "Not an Active Proposal");
         bool quorumMet;
 
-        for(uint i=0; i <= proposals[proposalId].options.length; i++)
-            if(proposals[proposalId].options[i].numVotes >= quorum) quorumMet = true;
+        for(uint i=0; i <= proposals[proposalId].options.length; i++){
+            if(proposals[proposalId].options[i].numVotes >= proposals[nextPropId].quorum) 
+                quorumMet = true;
+        }
 
-        if(!quorumMet) {
+        if(!quorumMet) 
             proposals[proposalId].status = Status.FailedQuorum;
-        } else 
+        else 
             proposals[proposalId].status = Status.Certified;
 
         return proposals[proposalId].status;
@@ -202,8 +214,18 @@ contract APAGovernance {
         manager = newManager;
     }
 
-    function setQuorum(uint newQuorum) external onlyManager(){
-        require(quorum >= 1, "must have at least one winning vote");
-        quorum = newQuorum;
+    function setQuorumPerAPA(uint newQuorum) external onlyManager(){
+        require(newQuorum >= 1, "must have at least one winning vote");
+        quorumPerAPA = newQuorum;
+    }
+
+    function setQuorumPerAddress(uint newQuorum) external onlyManager(){
+        require(newQuorum >= 1, "must have at least one winning vote");
+        quorumPerAddress = newQuorum;
+    }
+
+    function setQuorumByProposal(uint proposalId, uint newQuorum) external onlyManager(){
+        require(newQuorum >= 1, "must have at least one winning vote");
+        proposals[proposalId].quorum = newQuorum;
     }
 }
