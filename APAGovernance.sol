@@ -225,6 +225,7 @@ contract APAGovernance {
     }
 
     function setQuorumByProposal(uint proposalId, uint newQuorum) external onlyManager(){
+        require(proposals[proposalId].status == Status.Active, "Not an Active Proposal");
         require(newQuorum >= 1, "must have at least one winning vote");
         proposals[proposalId].quorum = newQuorum;
     }
