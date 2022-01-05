@@ -81,33 +81,32 @@ contract APAGovernance {
         string[] memory _optionNames,
         uint duration, //in days
         BallotType _ballotType //0=perAPA 1=perAddress
-        ) external verifyNumApas()  {
-            proposals[nextPropId].id = nextPropId;
-            proposals[nextPropId].author = msg.sender;
-            proposals[nextPropId].name = _name;
-            proposals[nextPropId].description = _desc;
-            proposals[nextPropId].end = block.timestamp + duration * 1 days;
-            proposals[nextPropId].ballotType = _ballotType;
-            proposals[nextPropId].status = Status.Active;   
-            for(uint i = 0; i <= _optionNames.length - 1; i++){
-                proposals[nextPropId].options.push(Option(i, _optionNames[i], 0));
-            }
-
-            if(_ballotType == BallotType.perAPA){
-                proposals[nextPropId].quorum = quorumPerAPA;
-            } else {
-                proposals[nextPropId].quorum = quorumPerAddress;
-            }
-
-            nextPropId+=1;
+    ) external verifyNumApas()  {
+        proposals[nextPropId].id = nextPropId;
+        proposals[nextPropId].author = msg.sender;
+        proposals[nextPropId].name = _name;
+        proposals[nextPropId].description = _desc;
+        proposals[nextPropId].end = block.timestamp + duration * 1 days;
+        proposals[nextPropId].ballotType = _ballotType;
+        proposals[nextPropId].status = Status.Active;   
+        for(uint i = 0; i <= _optionNames.length - 1; i++){
+            proposals[nextPropId].options.push(Option(i, _optionNames[i], 0));
         }
+
+        if(_ballotType == BallotType.perAPA){
+            proposals[nextPropId].quorum = quorumPerAPA;
+        } else {
+            proposals[nextPropId].quorum = quorumPerAddress;
+        }
+        nextPropId+=1;
+    }
 
     function vote(uint proposalId, uint optionId) external {
         uint voterBalance = apaContract.balanceOf(msg.sender);
-        require(voterBalance != 0, "Need at least one APA to cast a vote");
-        require(block.timestamp <= proposals[proposalId].end, "Proposal has Expired");
         require(proposals[proposalId].status == Status.Active, "Not an Active Proposal");
-
+        require(block.timestamp <= proposals[proposalId].end, "Proposal has Expired");
+        require(voterBalance != 0, "Need at least one APA to cast a vote");
+        
         uint currentAPA;
         uint ineligibleCount=0;
         uint userActListings=0;
@@ -161,7 +160,6 @@ contract APAGovernance {
         }
         int eligibleVotes = int(voterBalance) + int(userActListings) - int(ineligibleCount);
 
-      
         //1 vote per APA 
        if(proposals[proposalId].ballotType == BallotType.perAPA){
             require(eligibleVotes >= 1, "All APA's have voted");
@@ -228,5 +226,18 @@ contract APAGovernance {
         require(proposals[proposalId].status == Status.Active, "Not an Active Proposal");
         require(newQuorum >= 1, "must have at least one winning vote");
         proposals[proposalId].quorum = newQuorum;
+    }
+
+    function getProposals()
+        external
+        view
+        returns (Proposal[] memory _proposals)
+    {
+        Proposal[] memory _props = new Proposal[](nextPropId);
+        for (uint256 i = 0; i <= nextPropId-1; i++) {  
+            _props[i] = proposals[i];
+        }
+
+        return _props;
     }
 }
