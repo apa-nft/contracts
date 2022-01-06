@@ -100,83 +100,81 @@ contract APAGovernance {
         }
         nextPropId+=1;
     }
+    function countRegularVotes(uint256 proposalId, BallotType ballotType) internal returns(uint256) {
+        uint256 voterBalance = apaContract.balanceOf(msg.sender);
+        uint256 numOfVotes = 0;
+        uint currentAPA;
 
-    function vote(uint proposalId, uint optionId) external {
-        uint voterBalance = apaContract.balanceOf(msg.sender);
+        for(uint256 i=0; i < voterBalance; i++){
+                //get current APA
+            currentAPA = apaContract.tokenOfOwnerByIndex(msg.sender, i);
+            //check if APA has already voted
+            if(!votedAPAs[proposalId][currentAPA]){
+                //count APA as voted
+                if (ballotType == BallotType.perAddress) {
+                    require(!voters[proposalId][msg.sender], "Voter has already voted");
+                    return 1;
+                }
+                votedAPAs[proposalId][currentAPA] = true;
+                numOfVotes++;
+            }
+        }
+
+        return numOfVotes;
+    }
+
+    function countMarketVotes(uint256 proposalId, BallotType ballotType) internal returns(uint256) {
+        Market.Listing[] memory activeListings;
+        uint256 totalListings =apaMkt.totalActiveListings();
+        activeListings =apaMkt.getActiveListings(0,totalListings);
+        uint256 numOfVotes = 0;
+        uint currentAPA;
+        
+        for(uint256 i=0; i < totalListings; i++){
+            //get user Apas from Market (will be skipped if no market apas)
+            if (activeListings[i].owner == msg.sender){
+                currentAPA = activeListings[i].tokenId;
+                //check if APA has already voted
+                if(!votedAPAs[proposalId][currentAPA]){
+
+                    if (ballotType == BallotType.perAddress) {
+                        require(!voters[proposalId][msg.sender], "Voter has already voted");
+                        return 1;
+                    }
+                    //count APA as voted
+                    votedAPAs[proposalId][currentAPA] = true;
+                    numOfVotes++;
+                }              
+            }
+        }
+
+        return numOfVotes;
+    }
+    function vote(uint256 proposalId, uint256 optionId) external {
+        uint256 voterBalance = apaContract.balanceOf(msg.sender);
         require(proposals[proposalId].status == Status.Active, "Not an Active Proposal");
         require(block.timestamp <= proposals[proposalId].end, "Proposal has Expired");
         require(voterBalance != 0, "Need at least one APA to cast a vote");
+        BallotType ballotType = proposals[proposalId].ballotType;
         
-        uint currentAPA;
-        uint ineligibleCount=0;
-        uint userActListings=0;
-        uint totalListings =apaMkt.totalActiveListings();
-        
-        Market.Listing[] memory activeListings;
-        activeListings =apaMkt.getActiveListings(0,totalListings);
-
-        uint iterations;
-        if (voterBalance >= totalListings){
-            iterations = voterBalance;
-        }
-        else iterations = totalListings;
-
-        //get user Apas from wallet
-        for(uint i=0; i <= iterations-1; i++){
-
-            if(i <= voterBalance - 1){
-                //get current APA
-                currentAPA = apaContract.tokenOfOwnerByIndex(msg.sender, i);
-                //check if APA has already voted
-                if(!votedAPAs[proposalId][currentAPA]){
-                    //count APA as voted
-                    votedAPAs[proposalId][currentAPA] = true;
-                    //check Ballot Type
-                    if(proposals[proposalId].ballotType == BallotType.perAddress){
-                        require(!voters[proposalId][msg.sender], "Voter has already voted");
-                        break;//break if one vote per address, 
-                    }
-                } else ineligibleCount+=1;
-            }
-        
-            //get user Apas from Market (will be skipped if no market apas)
-            if(i <= totalListings - 1){
-
-                if (activeListings[i].owner == msg.sender){
-                    currentAPA = activeListings[i].tokenId;
-                    //check if APA has already voted
-                    if(!votedAPAs[proposalId][currentAPA]){
-                        //count APA as voted
-                        votedAPAs[proposalId][currentAPA] = true;
-                        userActListings++;
-                        //check Ballot Type
-                        if(proposals[proposalId].ballotType == BallotType.perAddress){
-                            require(!voters[proposalId][msg.sender], "Voter has already voted");
-                            break;//break if one vote per address, 
-                        }
-                    }              
-                }
-            }
-        }
-        int eligibleVotes = int(voterBalance) + int(userActListings) - int(ineligibleCount);
-
         //1 vote per APA 
-       if(proposals[proposalId].ballotType == BallotType.perAPA){
-            require(eligibleVotes >= 1, "All APA's have voted");
+        if(ballotType == BallotType.perAPA){
+            uint256 eligibleVotes = countRegularVotes(proposalId,ballotType) + countMarketVotes(proposalId,ballotType);
+            require(eligibleVotes >= 1, "Vote count is zero");
             //count votes
-            proposals[proposalId].options[optionId].numVotes += uint(eligibleVotes);
+            proposals[proposalId].options[optionId].numVotes += eligibleVotes;
         }
 
         //1 vote per address
-        if(proposals[proposalId].ballotType == BallotType.perAddress){
-            //count vote
-            proposals[proposalId].options[optionId].numVotes += 1;
-            //mark voter as voted
-            voters[proposalId][msg.sender] = true;
+        if(ballotType == BallotType.perAddress){
+            if(countRegularVotes(proposalId,ballotType) > 0  || countMarketVotes(proposalId,ballotType) > 0  ){ // if countRegularVotes() is true countMarketVotes() wont be evaluated
+                proposals[proposalId].options[optionId].numVotes += 1;
+                voters[proposalId][msg.sender] = true;
+            }
         }
          
     }
-  
+
     function certifyResults(uint proposalId) external returns(Status) {
         require(certifiers[msg.sender], "must be certifier to certify results");
         require(block.timestamp >= proposals[proposalId].end, "Proposal has not yet ended");
