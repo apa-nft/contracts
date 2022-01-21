@@ -7,3 +7,6 @@
 [submodule "apa-forge-test/lib\\openzeppelin-contracts"]
 	path = apa-forge-test/lib\\openzeppelin-contracts
 	url = https://github.com/openzeppelin/openzeppelin-contracts
+[submodule "apa-forge-test/help/lib\\ds-test"]
+	path = apa-forge-test/help/lib\\ds-test
+	url = https://github.com/dapphub/ds-test
