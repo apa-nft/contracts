@@ -11,27 +11,39 @@ contract APAGovernance {
     address immutable apaToken;
     address immutable apaMarket;//new testnet market address
 
-    event NewActiveProposal(
-        uint indexed id, 
-        uint end, 
-        uint ballotType, 
+    event ProposalCreated(
+        uint indexed propId, 
+        uint end,
+        uint quorum,
+        uint numOptions,
+        uint ballotType,
         uint status,
         address author, 
         string name, 
-        string desc, 
-        string[] optionNames
+        string desc
     );
 
-    event NewCertifiedProposal(
-        uint indexed id, 
-        uint end, 
-        uint ballotType, 
-        uint status,
-        address author, 
-        string name, 
-        string desc, 
-        uint[] optionVotes,
-        string[] optionNames        
+    event ProposalStatusUpdated(
+        uint indexed propId, 
+        uint status     
+    );
+
+    event ProposalVotesUpdated(
+        uint indexed propId,
+        uint indexed optionId, 
+        uint numVotes   
+    );
+
+    event OptionCreated(
+        uint indexed propId,
+        uint indexed optionId,
+        uint numVotes,
+        string name
+    );
+
+    event QuorumByProposalUpdated(
+        uint indexed propId,
+        uint newQuorum
     );
 
     enum BallotType {perAPA, perAddress}
@@ -54,7 +66,8 @@ contract APAGovernance {
         uint numVotes;
         string name;
     }
-     uint public lngth;
+
+    uint public lngth;
     address public manager;
     uint public proposerApas; 
     uint public quorumPerAPA;
@@ -115,6 +128,13 @@ contract APAGovernance {
         proposals[nextPropId].status = Status.Active;   
         for(uint i = 0; i <= _optionNames.length - 1; i++){
             proposals[nextPropId].options.push(Option(i, 0, _optionNames[i]));
+            
+            emit OptionCreated(
+                nextPropId,
+                i,
+                0,
+                _optionNames[i]
+            );
         }
 
         if(_ballotType == BallotType.perAPA){
@@ -126,15 +146,16 @@ contract APAGovernance {
         string[] memory optionNames = new string[](_optionNames.length);
         optionNames = _optionNames;
 
-        emit NewActiveProposal(
+        emit ProposalCreated(
             proposals[nextPropId].id, 
-            proposals[nextPropId].end, 
+            proposals[nextPropId].end,
+            proposals[nextPropId].quorum,
+            _optionNames.length,
             uint(proposals[nextPropId].ballotType),
             uint(proposals[nextPropId].status),
             proposals[nextPropId].author, 
             proposals[nextPropId].name, 
-            proposals[nextPropId].description,
-            optionNames
+            proposals[nextPropId].description
         );
 
         nextPropId+=1;
@@ -226,11 +247,16 @@ contract APAGovernance {
                 voters[proposalId][voter] = true;
             }
         }
+
+        emit ProposalVotesUpdated(
+            proposalId,
+            optionId, 
+            proposals[proposalId].options[optionId].numVotes
+        );
          
     }
    
     function certifyResults(uint proposalId) external returns(Status) {
-         
         require(certifiers[msg.sender], "must be certifier to certify results");
         require(block.timestamp >= proposals[proposalId].end, "Proposal has not yet ended");
         require(proposals[proposalId].status == Status.Active, "Not an Active Proposal");
@@ -251,18 +277,11 @@ contract APAGovernance {
         else 
             proposals[proposalId].status = Status.Certified;
 
-        emit NewCertifiedProposal(
-            proposals[proposalId].id, 
-            proposals[proposalId].end, 
-            uint(proposals[proposalId].ballotType),
-            uint(proposals[proposalId].status),
-            proposals[proposalId].author, 
-            proposals[proposalId].name, 
-            proposals[proposalId].description,
-            _optionVotes,
-            _optionNames            
+        emit ProposalStatusUpdated(
+            proposalId, 
+            uint(proposals[proposalId].status)
         );
-        
+       
         return proposals[proposalId].status;
     }
 
@@ -292,6 +311,11 @@ contract APAGovernance {
         require(proposals[proposalId].status == Status.Active, "Not an Active Proposal");
         require(newQuorum >= 1, "must have at least one winning vote");
         proposals[proposalId].quorum = newQuorum;
+        
+        emit QuorumByProposalUpdated(
+            proposalId,
+            proposals[proposalId].quorum
+        );
     }
 
     function getProposals()
