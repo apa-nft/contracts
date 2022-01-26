@@ -23,6 +23,11 @@ contract APAGovernance {
         string desc
     );
 
+    event ProposalOptionsUpdated(
+        uint indexed propId,
+        uint indexed optionId
+    );
+
     event ProposalStatusUpdated(
         uint indexed propId, 
         uint status     
@@ -118,6 +123,8 @@ contract APAGovernance {
         address proposer = msg.sender;
         uint numAPAs = apaContract.balanceOf(proposer);
         require((numAPAs >= proposerApas || isLegendary(proposer)), 'Need more APAs');
+        require(duration >= 1, 'Duration must be at least 1 day');
+        require(_optionNames.length >= 1, 'must have at least 1 option');
 
         proposals[nextPropId].id = nextPropId;
         proposals[nextPropId].author = proposer;
@@ -125,26 +132,13 @@ contract APAGovernance {
         proposals[nextPropId].description = _desc;
         proposals[nextPropId].end = block.timestamp + duration * 1 days;
         proposals[nextPropId].ballotType = _ballotType;
-        proposals[nextPropId].status = Status.Active;   
-        for(uint i = 0; i <= _optionNames.length - 1; i++){
-            proposals[nextPropId].options.push(Option(i, 0, _optionNames[i]));
-            
-            emit OptionCreated(
-                nextPropId,
-                i,
-                0,
-                _optionNames[i]
-            );
-        }
-
+        proposals[nextPropId].status = Status.Active; 
+        
         if(_ballotType == BallotType.perAPA){
             proposals[nextPropId].quorum = quorumPerAPA;
         } else {
             proposals[nextPropId].quorum = quorumPerAddress;
-        }
-
-        string[] memory optionNames = new string[](_optionNames.length);
-        optionNames = _optionNames;
+        }  
 
         emit ProposalCreated(
             proposals[nextPropId].id, 
@@ -157,6 +151,22 @@ contract APAGovernance {
             proposals[nextPropId].name, 
             proposals[nextPropId].description
         );
+
+        for(uint i = 0; i <= _optionNames.length - 1; i++){
+            proposals[nextPropId].options.push(Option(i, 0, _optionNames[i]));
+            
+            emit OptionCreated(
+                nextPropId,
+                i,
+                0,
+                _optionNames[i]
+            );
+
+            emit ProposalOptionsUpdated(
+                nextPropId,
+                i
+            );
+        }
 
         nextPropId+=1;
         return nextPropId-1;
